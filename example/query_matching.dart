@@ -11,8 +11,11 @@ void main() {
       .given('search service is running')
       // Configure the request
       .withRequest('GET', '/api/search', query: {
+    'null': null,
     // Simple value
     'simple': 'value',
+    // Multiple values
+    'multiple': ['one', 'two', 'three'],
     // Multiple values for a single parameter
     'ids': PactMatchers.QueryMultiValue(['1', '2', '3']),
     // Regex matching for a single value
