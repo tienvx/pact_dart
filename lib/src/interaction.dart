@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:pact_dart/src/bindings/bindings.dart';
@@ -84,6 +85,25 @@ class Interaction extends InteractionHandler<Interaction> {
     }
   }
 
+  void _withBinaryBody<T>(InteractionPart part, T body, String? contentType) {
+    Pointer<Char> cContentType = nullptr;
+
+    if (contentType != null) {
+      cContentType = contentType.toNativeUtf8().cast<Char>();
+    }
+
+    final binaryBody = _toUint8List(body);
+    final cBody = _uint8ListToPointer(binaryBody);
+
+    try {
+      bindings.pactffi_with_binary_body(
+          handle, part, cContentType, cBody, binaryBody.length);
+    } finally {
+      calloc.free(cContentType);
+      calloc.free(cBody);
+    }
+  }
+
   void _withQuery(Map<String, dynamic> query) {
     query.forEach((key, value) {
       final cKey = key.toNativeUtf8().cast<Char>();
@@ -111,6 +131,53 @@ class Interaction extends InteractionHandler<Interaction> {
         }
       }
     });
+  }
+
+  bool _isBinary(dynamic value) {
+    return value is Uint8List ||
+        value is ByteBuffer ||
+        value is TypedData ||
+        (value is List<int> && value.every((e) => e >= 0 && e <= 255));
+  }
+
+  Uint8List _toUint8List(dynamic value) {
+    if (value == null) {
+      throw ArgumentError('Value is null');
+    }
+
+    // Already Uint8List
+    if (value is Uint8List) {
+      return value;
+    }
+
+    // ByteBuffer
+    if (value is ByteBuffer) {
+      return value.asUint8List();
+    }
+
+    // Any TypedData (Int8List, Uint16List, etc.)
+    if (value is TypedData) {
+      return Uint8List.view(
+        value.buffer,
+        value.offsetInBytes,
+        value.lengthInBytes,
+      );
+    }
+
+    // List<int>
+    if (value is List<int>) {
+      return Uint8List.fromList(value);
+    }
+
+    throw ArgumentError(
+      'Unsupported binary type: ${value.runtimeType}',
+    );
+  }
+
+  Pointer<Uint8> _uint8ListToPointer(Uint8List data) {
+    final ptr = calloc<Uint8>(data.length);
+    ptr.asTypedList(data.length).setAll(0, data);
+    return ptr;
   }
 
   /// Configures the request for this interaction.
@@ -153,7 +220,12 @@ class Interaction extends InteractionHandler<Interaction> {
     }
 
     if (body != null) {
-      _withBody(InteractionPart.InteractionPart_Request, body, contentType);
+      if (_isBinary(body)) {
+        _withBinaryBody(
+            InteractionPart.InteractionPart_Request, body, contentType);
+      } else {
+        _withBody(InteractionPart.InteractionPart_Request, body, contentType);
+      }
     }
 
     return this;
@@ -172,7 +244,12 @@ class Interaction extends InteractionHandler<Interaction> {
     }
 
     if (body != null) {
-      _withBody(InteractionPart.InteractionPart_Response, body, contentType);
+      if (_isBinary(body)) {
+        _withBinaryBody(
+            InteractionPart.InteractionPart_Response, body, contentType);
+      } else {
+        _withBody(InteractionPart.InteractionPart_Response, body, contentType);
+      }
     }
 
     return this;
