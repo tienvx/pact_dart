@@ -186,4 +186,11 @@ class PactMatchers {
   static Map QueryEachLike(dynamic example, {int min = 1, int? max}) {
     return EachLike(example, min: min, max: max);
   }
+
+  static Map boolean(bool value) {
+    return {
+      'pact:matcher:type': 'boolean',
+      'value': value,
+    };
+  }
 }
